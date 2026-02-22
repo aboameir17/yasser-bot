@@ -1,39 +1,3 @@
-import logging
-import asyncio
-import random
-import time
-import os
-import httpx  # الطريقة الأسرع والأكثر أماناً للتعامل مع API الذكاء الاصطناعي
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from supabase import create_client, Client  # تم تصحيح الكلمة لضمان الربط مع Supabase
-
-# وضعنا البيانات هنا مباشرة كما طلبت يا ياسر
-BOT_TOKEN = "8507472664:AAEUQ5uZWTQtOXtbiBOdxnXLPKz4eFrOvXo"
-GROQ_API_KEY = "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"
-SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
-ADMIN_ID = 7988144062
-
-# إعداد السجلات
-logging.basicConfig(level=logging.INFO)
-
-# تعريف المحركات الأساسية
-# ملاحظة: أضفنا دالة لتفادي مشاكل DNS في الاستضافات
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# --- [ 2. دالة بدء التشغيل لضمان الاتصال ] ---
-async def on_startup(dp):
-    print("🚀 تم تشغيل البوت بنجاح باستخدام البيانات المباشرة!")
-    print(f"📡 متصل بـ Supabase: {SUPABASE_URL}")
-
-# --- [ 3. أوامر البوت (مثال للتأكد) ] ---
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
     await message.reply(f"أهلاً ياسر! البوت شغال الآن ببياناتك الجديدة 🟢\nالإصدار المستهدف: 3.11.10")
