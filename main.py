@@ -1,93 +1,81 @@
 import asyncio, os, httpx, logging
-import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiohttp import web
 
-# --- [ الإعدادات - مفاتيحك ] ---
+# --- [ الإعدادات - مفاتيحك الملكية ] ---
 API_TOKEN = "8587471594:AAEDUgePR4dToTkxeJkrhFL3sWo0nFUY1yU"
-GROQ_API_KEY = "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"
-GEMINI_API_KEY = "AIzaSyBB6hSieJutCAx1jdZSi_h6kUfERIVV1C4"
+OPENROUTER_KEY = "b33a34f2b0da469e854176cc78642ea5"
 
-# إعداد Gemini مع تعطيل الفلاتر تماماً
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    safety_settings=[
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-)
-
-logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 dp = Dispatcher(bot)
+logging.basicConfig(level=logging.INFO)
 
-# --- [ محرك جورب (Groq) ] ---
-async def get_groq_hint(word):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "user", "content": f"أعطني لغزاً ذكياً جداً عن كلمة ({word}) بدون ذكر اسمها."}],
-        "temperature": 0.6
+# --- [ محرك التلميح عبر OpenRouter ] ---
+async def get_openrouter_hint(word):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://render.com", # ضروري لـ OpenRouter
     }
+    
+    # نستخدم الموديل المجاني الأقوى Gemini 2.0 Flash
+    payload = {
+        "model": "google/gemini-2.0-flash-exp:free",
+        "messages": [
+            {
+                "role": "user", 
+                "content": f"أنت خبير ألغاز. أعطني لغزاً ذكياً وقصيراً عن كلمة ({word}) دون ذكرها. الرد سطر واحد فقط."
+            }
+        ]
+    }
+    
     try:
         async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, headers=headers, timeout=10.0)
-            text = res.json()['choices'][0]['message']['content'].strip()
-            return f"🐺 <b>〔 تـلـمـيـح جـورب - Groq 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>"
-    except: return "⚠️ محرك جورب (Groq) متوقف حالياً."
-
-# --- [ محرك الاختبار (Gemini) - النسخة الموثوقة ] ---
-async def get_gemini_hint(word):
-    try:
-        # استخدام asyncio.to_thread لمنع تعليق البوت
-        response = await asyncio.to_thread(
-            gemini_model.generate_content, 
-            f"أعطني لغزاً غامضاً وذكياً جداً عن الكلمة التالية بدون ذكرها: {word}"
-        )
-        
-        # التحقق من وجود رد صالح
-        if response and response.candidates:
-            text = response.text.strip()
-            return f"💎 <b>〔 تـلـمـيـح اخـتـبـار - Gemini 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>"
-        else:
-            return "⚠️ Gemini رفض توليد اللغز (قيود المحتوى)."
+            response = await client.post(url, headers=headers, json=payload, timeout=25.0)
+            res_data = response.json()
+            
+            if 'choices' in res_data:
+                return res_data['choices'][0]['message']['content'].strip()
+            else:
+                logging.error(f"OpenRouter Error: {res_data}")
+                return "⚠️ المحرك المجاني مشغول حالياً."
     except Exception as e:
-        logging.error(f"Gemini Error: {e}")
-        return "⚠️ محرك Gemini واجه خطأ في الاتصال."
-
-# --- [ معالجة الرسائل ] ---
+        logging.error(f"Connection Error: {e}")
+        return "⚠️ فشل الاتصال بالمحرك المنقذ."
 
 @dp.message_handler(commands=['start'])
 async def start(m: types.Message):
-    await m.answer("🚀 <b>نظام السباق المزدوج مفعل!</b>\nأرسل أي كلمة الآن وشاهد قوة الذكاء الاصطناعي.")
+    await m.answer("🚀 <b>مرحباً بك في جورب الذكاء!</b>\nالبوت يعمل الآن عبر محرك OpenRouter المجاني.")
 
 @dp.message_handler()
-async def duel_mode(m: types.Message):
+async def handle_game(m: types.Message):
     word = m.text.strip()
-    wait_msg = await m.answer(f"⏳ جاري تشغيل المحركات لـ (<b>{word}</b>)...")
-
-    # تشغيل المحركين بالتوازي لضمان السرعة
-    gemini_res, groq_res = await asyncio.gather(
-        get_gemini_hint(word),
-        get_groq_hint(word)
+    wait_msg = await m.answer(f"⏳ <b>المنقذ يفكر في:</b> ( {word} )...")
+    
+    hint = await get_openrouter_hint(word)
+    
+    res = (
+        f"💎 <b>〔 تـلـمـيـح الـمـنـقـذ 〕</b>\n"
+        f"━━━━━━━━━━━━━━\n\n"
+        f"📜 <b>الوصف:</b>\n"
+        f"« <i>{hint}</i> »\n\n"
+        f"━━━━━━━━━━━━━━"
     )
-
     await wait_msg.delete()
-    await m.answer(gemini_res)
-    await m.answer(groq_res)
+    await m.answer(res)
 
-# --- [ إعدادات Render للبقاء حياً ] ---
-async def handle_ping(request): return web.Response(text="Active")
+# --- [ إعدادات الويب للبقاء حياً لـ Render ] ---
+async def handle_ping(request): return web.Response(text="Bot is Active")
 
 if __name__ == '__main__':
     app = web.Application()
     app.router.add_get('/', handle_ping)
-    runner = web.AppRunner(app); loop = asyncio.get_event_loop()
+    runner = web.AppRunner(app)
+    loop = asyncio.get_event_loop()
     loop.run_until_complete(runner.setup())
     port = int(os.environ.get("PORT", 10000))
     loop.create_task(web.TCPSite(runner, '0.0.0.0', port).start())
+    
+    print("✅ البوت شغال بمفتاح المنقذ الجديد!")
     executor.start_polling(dp, skip_updates=True)
