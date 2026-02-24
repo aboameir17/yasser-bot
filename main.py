@@ -10,7 +10,16 @@ GEMINI_API_KEY = "AIzaSyBB6hSieJutCAx1jdZSi_h6kUfERIVV1C4"
 
 # إعداد المحركات
 genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+# إعداد الموديل مع فلاتر أمان مفتوحة للألغاز
+gemini_model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    safety_settings=[
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+)
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
@@ -30,43 +39,50 @@ async def get_groq_hint(word):
             res = await client.post(url, json=payload, headers=headers, timeout=15.0)
             text = res.json()['choices'][0]['message']['content'].strip()
             return f"🐺 <b>〔 تـلـمـيـح جـورب - Groq 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>\n━━━━━━━━━━━━━━"
-    except: return "⚠️ محرك جورب (Groq) واجه مشكلة."
+    except Exception as e: 
+        return f"⚠️ محرك جورب (Groq) واجه مشكلة."
 
-# --- [ دالة محرك الاختبار (Gemini) ] ---
+# --- [ دالة محرك الاختبار (Gemini) - النسخة المحدثة ] ---
 async def get_gemini_hint(word):
     try:
-        response = await asyncio.to_thread(gemini_model.generate_content, f"لغز غامض وذكي جداً عن {word} بدون ذكر الكلمة.")
-        text = response.text.strip()
-        return f"💎 <b>〔 تـلـمـيـح اخـتـبـار - Gemini 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>\n━━━━━━━━━━━━━━"
-    except: return "⚠️ محرك الاختبار (Gemini) واجه مشكلة."
+        # طلب التلميح ببرومبت واضح
+        response = await asyncio.to_thread(
+            gemini_model.generate_content, 
+            f"أعطني لغزاً غامضاً وذكياً جداً عن الكلمة التالية بدون ذكرها: {word}"
+        )
+        
+        # التأكد من وجود نص في الاستجابة
+        if response and response.text:
+            text = response.text.strip()
+            return f"💎 <b>〔 تـلـمـيـح اخـتـبـار - Gemini 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>\n━━━━━━━━━━━━━━"
+        else:
+            return "⚠️ Gemini لم يستطع توليد نص لهذا اللغز."
+    except Exception as e:
+        logging.error(f"Gemini Error: {e}")
+        return f"⚠️ محرك الاختبار (Gemini) واجه مشكلة."
 
-# --- [ معالجة الرسائل - تشغيل الاثنين معاً ] ---
+# --- [ معالجة الرسائل ] ---
 
 @dp.message_handler(commands=['start'])
 async def start(m: types.Message):
-    await m.answer("🚀 <b>مرحباً بك في سباق العمالقة!</b>\n\nأرسل أي كلمة الآن، وسيقوم <b>Gemini</b> و <b>Groq</b> بتوليد تلميحاتهما في نفس الوقت!")
+    await m.answer("🚀 <b>سباق العمالقة جاهز!</b>\nأرسل أي كلمة الآن وشوف الفرق بين Gemini و Groq.")
 
 @dp.message_handler()
 async def duel_mode(m: types.Message):
     word = m.text.strip()
-    
-    # رسالة انتظار أولية
-    status_msg = await m.answer(f"⏳ جاري استنفار الذكاء الاصطناعي لـ (<b>{word}</b>)...")
+    status_msg = await m.answer(f"⏳ جاري تشغيل المحركات لـ (<b>{word}</b>)...")
 
-    # تشغيل الدالتين في نفس الوقت (Concurrent execution)
+    # تشغيل المحركين معاً
     results = await asyncio.gather(
         get_gemini_hint(word),
         get_groq_hint(word)
     )
 
-    # حذف رسالة الانتظار
     await status_msg.delete()
-
-    # إرسال النتائج
     for result in results:
         await m.answer(result)
 
-# --- [ إعدادات الويب للبقاء حياً لـ Render ] ---
+# --- [ إعدادات Render ] ---
 async def handle_ping(request): return web.Response(text="Active")
 
 if __name__ == '__main__':
@@ -76,6 +92,4 @@ if __name__ == '__main__':
     loop.run_until_complete(runner.setup())
     port = int(os.environ.get("PORT", 10000))
     loop.create_task(web.TCPSite(runner, '0.0.0.0', port).start())
-    
-    print("✅ نظام السباق المزدوج شغال.. انطلق يا ياسر!")
     executor.start_polling(dp, skip_updates=True)
