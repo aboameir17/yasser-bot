@@ -3,14 +3,13 @@ import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiohttp import web
 
-# --- [ الإعدادات - مفاتيحك الملكية ] ---
+# --- [ الإعدادات - مفاتيحك ] ---
 API_TOKEN = "8587471594:AAEDUgePR4dToTkxeJkrhFL3sWo0nFUY1yU"
 GROQ_API_KEY = "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"
 GEMINI_API_KEY = "AIzaSyBB6hSieJutCAx1jdZSi_h6kUfERIVV1C4"
 
-# إعداد المحركات
+# إعداد Gemini مع تعطيل الفلاتر تماماً
 genai.configure(api_key=GEMINI_API_KEY)
-# إعداد الموديل مع فلاتر أمان مفتوحة للألغاز
 gemini_model = genai.GenerativeModel(
     model_name='gemini-1.5-flash',
     safety_settings=[
@@ -25,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 dp = Dispatcher(bot)
 
-# --- [ دالة محرك جورب (Groq) ] ---
+# --- [ محرك جورب (Groq) ] ---
 async def get_groq_hint(word):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
@@ -36,53 +35,52 @@ async def get_groq_hint(word):
     }
     try:
         async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, headers=headers, timeout=15.0)
+            res = await client.post(url, json=payload, headers=headers, timeout=10.0)
             text = res.json()['choices'][0]['message']['content'].strip()
-            return f"🐺 <b>〔 تـلـمـيـح جـورب - Groq 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>\n━━━━━━━━━━━━━━"
-    except Exception as e: 
-        return f"⚠️ محرك جورب (Groq) واجه مشكلة."
+            return f"🐺 <b>〔 تـلـمـيـح جـورب - Groq 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>"
+    except: return "⚠️ محرك جورب (Groq) متوقف حالياً."
 
-# --- [ دالة محرك الاختبار (Gemini) - النسخة المحدثة ] ---
+# --- [ محرك الاختبار (Gemini) - النسخة الموثوقة ] ---
 async def get_gemini_hint(word):
     try:
-        # طلب التلميح ببرومبت واضح
+        # استخدام asyncio.to_thread لمنع تعليق البوت
         response = await asyncio.to_thread(
             gemini_model.generate_content, 
             f"أعطني لغزاً غامضاً وذكياً جداً عن الكلمة التالية بدون ذكرها: {word}"
         )
         
-        # التأكد من وجود نص في الاستجابة
-        if response and response.text:
+        # التحقق من وجود رد صالح
+        if response and response.candidates:
             text = response.text.strip()
-            return f"💎 <b>〔 تـلـمـيـح اخـتـبـار - Gemini 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>\n━━━━━━━━━━━━━━"
+            return f"💎 <b>〔 تـلـمـيـح اخـتـبـار - Gemini 〕</b>\n━━━━━━━━━━━━━━\n📜 <i>{text}</i>"
         else:
-            return "⚠️ Gemini لم يستطع توليد نص لهذا اللغز."
+            return "⚠️ Gemini رفض توليد اللغز (قيود المحتوى)."
     except Exception as e:
         logging.error(f"Gemini Error: {e}")
-        return f"⚠️ محرك الاختبار (Gemini) واجه مشكلة."
+        return "⚠️ محرك Gemini واجه خطأ في الاتصال."
 
 # --- [ معالجة الرسائل ] ---
 
 @dp.message_handler(commands=['start'])
 async def start(m: types.Message):
-    await m.answer("🚀 <b>سباق العمالقة جاهز!</b>\nأرسل أي كلمة الآن وشوف الفرق بين Gemini و Groq.")
+    await m.answer("🚀 <b>نظام السباق المزدوج مفعل!</b>\nأرسل أي كلمة الآن وشاهد قوة الذكاء الاصطناعي.")
 
 @dp.message_handler()
 async def duel_mode(m: types.Message):
     word = m.text.strip()
-    status_msg = await m.answer(f"⏳ جاري تشغيل المحركات لـ (<b>{word}</b>)...")
+    wait_msg = await m.answer(f"⏳ جاري تشغيل المحركات لـ (<b>{word}</b>)...")
 
-    # تشغيل المحركين معاً
-    results = await asyncio.gather(
+    # تشغيل المحركين بالتوازي لضمان السرعة
+    gemini_res, groq_res = await asyncio.gather(
         get_gemini_hint(word),
         get_groq_hint(word)
     )
 
-    await status_msg.delete()
-    for result in results:
-        await m.answer(result)
+    await wait_msg.delete()
+    await m.answer(gemini_res)
+    await m.answer(groq_res)
 
-# --- [ إعدادات Render ] ---
+# --- [ إعدادات Render للبقاء حياً ] ---
 async def handle_ping(request): return web.Response(text="Active")
 
 if __name__ == '__main__':
