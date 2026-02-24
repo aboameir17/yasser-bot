@@ -9,59 +9,67 @@ GROQ_API_KEY = "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"
 
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
 dp = Dispatcher(bot)
-logging.basicConfig(level=logging.INFO)
 
-# --- [ محرك Groq الاحتياطي ] ---
-async def get_groq_backup(word):
+# --- [ 1. محرك الرابط المباشر (مستوحى من ملفاتك) ] ---
+async def get_direct_api(word):
+    # نستخدم رابط من الروابط التي وجدناها في ملفاتك لضمان الرد السريع
+    url = f"https://www.pyhanzo.com/ChatGPT3.5?prompt=أعطني لغز عن {word} بدون ذكر اسمها"
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(url, timeout=10.0)
+            if res.status_code == 200 and len(res.text) > 5:
+                return res.text.strip(), "Direct Link 🔗"
+    except:
+        return None, None
+
+# --- [ 2. محرك Groq ] ---
+async def get_groq_hint(word):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
     payload = {
         "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "user", "content": f"لغز ذكي وقصير جداً عن ({word}) بدون ذكرها."}],
-        "temperature": 0.5
+        "messages": [{"role": "user", "content": f"لغز ذكي وقصير جداً عن ({word}) بدون ذكر اسمها."}]
     }
     try:
         async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, timeout=10.0)
+            res = await client.post(url, json=payload, headers=headers, timeout=10.0)
             return res.json()['choices'][0]['message']['content'].strip(), "Groq 🐺"
     except:
         return None, None
 
-# --- [ محرك OpenRouter الأساسي ] ---
-async def get_hint_combined(word):
+# --- [ 3. محرك OpenRouter ] ---
+async def get_openrouter_hint(word):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "google/gemini-2.0-flash-exp:free",
         "messages": [{"role": "user", "content": f"لغز غامض وذكي عن كلمة ({word}) بدون ذكرها."}]
     }
-    
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=payload, timeout=15.0)
-            res_data = response.json()
-            if 'choices' in res_data:
-                return res_data['choices'][0]['message']['content'].strip(), "OpenRouter 💎"
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            return response.json()['choices'][0]['message']['content'].strip(), "OpenRouter 💎"
     except:
-        pass # إذا فشل ننتقل للاحتياطي
+        return None, None
 
-    # إذا وصلنا هنا يعني المحرك الأول فشل، نشغل الاحتياطي فوراً
-    backup_text, source = await get_groq_backup(word)
-    if backup_text:
-        return backup_text, source
+# --- [ النظام الذكي لاختيار المحرك ] ---
+async def get_final_hint(word):
+    # الترتيب: OpenRouter -> Groq -> Direct Link
+    methods = [get_openrouter_hint, get_groq_hint, get_direct_api]
     
-    return "⚠️ جميع المحركات مشغولة حالياً، جرب كلمة أخرى.", "Error ❌"
-
-@dp.message_handler(commands=['start'])
-async def start(m: types.Message):
-    await m.answer("🚀 <b>تم تفعيل نظام الحماية المزدوج!</b>\nأرسل أي كلمة وسأستخدم أذكى المحركات المتاحة.")
+    for method in methods:
+        text, source = await method(word)
+        if text:
+            return text, source
+            
+    return "⚠️ كل المحركات مشغولة، حاول مجدداً بعد ثواني.", "Failed ❌"
 
 @dp.message_handler()
 async def handle_game(m: types.Message):
     word = m.text.strip()
-    wait_msg = await m.answer(f"⏳ جاري البحث في عقول الذكاء الاصطناعي...")
+    wait_msg = await m.answer(f"⏳ جاري تشغيل المحركات...")
     
-    hint, source = await get_hint_combined(word)
+    hint, source = await get_final_hint(word)
     
     res = (
         f"💎 <b>〔 تـلـمـيـح الـمـسـابـقـة 〕</b>\n"
@@ -69,18 +77,10 @@ async def handle_game(m: types.Message):
         f"📜 <b>الوصف:</b>\n"
         f"« <i>{hint}</i> »\n\n"
         f"━━━━━━━━━━━━━━\n"
-        f"⚙️ <b>المحرك المستخدم:</b> {source}"
+        f"⚙️ <b>المصدر:</b> {source}"
     )
     await wait_msg.delete()
     await m.answer(res)
 
-# --- [ نظام Render ] ---
-async def handle_ping(request): return web.Response(text="Active")
 if __name__ == '__main__':
-    app = web.Application()
-    app.router.add_get('/', handle_ping)
-    runner = web.AppRunner(app); loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    port = int(os.environ.get("PORT", 10000))
-    loop.create_task(web.TCPSite(runner, '0.0.0.0', port).start())
     executor.start_polling(dp, skip_updates=True)
