@@ -4,7 +4,7 @@ from supabase import create_client, Client
 
 # --- [ الإعدادات النهائية والمحدثة ] ---
 # التوكن الجديد الذي أرسلته
-API_TOKEN = "8587471594:AAEDUgePR4dToTkxeJkrhFL3sWo0nFUY1yU"
+API_TOKEN = "8587471594:AAH566-wGOx1tbDHRVRwgnAptUvfwIDHPqQ"
 # آيدي الأدمن الخاص بك للتنبيهات
 ADMIN_ID = 7988144062 
 
