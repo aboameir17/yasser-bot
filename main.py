@@ -9,8 +9,8 @@ ADMIN_ID = 7988144062
 # القلوب (مفاتيح جوروب)
 GROQ_KEYS = [
     "gsk_uiVfQCAABOvhIAyeyIcwWGdyb3FYt4W4O1Xzg4eKLTIe38M9WBf556",
-    "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",
-    "gsk_VUUgaxYJ0aw9h3WfCVXgWGdyb3FYxbzcUndSUmrFLq2kVIHhLqJ55v"
+    "gsk_yVkyOmMFalkLToStSRYqWGdyb3FY5kLK4Hr1KECxdpAawZWd4iV55X",
+    "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"
 ]
 
 # بيانات سوبابيس
