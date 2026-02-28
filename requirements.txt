@@ -1,3 +1,4 @@
 aiogram==2.25.1
-httpx
-supabase
+supabase==2.3.0
+postgrest==0.10.7
+httpx==0.24.1
