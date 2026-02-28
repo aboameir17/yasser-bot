@@ -1,5 +1,5 @@
 aiogram==2.25.1
 supabase==2.3.0
+postgrest>=0.10.8
 httpx==0.24.1
-postgrest==0.10.7
-urllib3==1.26.15
+urllib3<2.0.0
