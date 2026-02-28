@@ -1,90 +1,84 @@
-import asyncio, httpx, logging
+import asyncio
+import random
 from aiogram import Bot, Dispatcher, types, executor
-from supabase import create_client, Client
+from supabase import create_client
 
-# --- [ الإعدادات النهائية ] ---
-API_TOKEN = "8587471594:AAEB0cRP3lrEFfP-vGTRC1B4sHhMCxYF6LM"
-ADMIN_ID = 7988144062 
-
-# القلوب (مفاتيح جوروب)
-GROQ_KEYS = [
-    "g_uiVfQCAABOvhIAyeyIcwWGdyb3FYt4W4O1Xzg4eKLTIe38M9WBf556",
-    "g_yVkyOmMFalkLToStSRYqWGdyb3FY5kLK4Hr1KECxdpAawZWd4iV55X",
-    "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"
-]
-
-# بيانات سوبابيس
+# 🔑 الإعدادات
 SUPABASE_URL = "https://snlcbtgzdxsacwjipggn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubGNidGd6ZHhzYWN3amlwZ2duIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU3NDMzMiwiZXhwIjoyMDg2MTUwMzMyfQ.v3SRkONLNlQw5LWhjo03u0fDce3EvWGBpJ02OGg5DEI"
+BOT_TOKEN = "8587471594:AAEB0cRP3lrEFfP-vGTRC1B4sHhMCxYF6LM"
 
-# إعداد الاتصالات
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-bot = Bot(token=API_TOKEN, parse_mode="HTML")
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-current_key_index = 0
+# 📚 بنك الأسئلة التجريبي
+QUESTIONS_BANK = [
+    {"q": "ما هو اسم البنت التي يحبها ياسر؟", "a": "العنود"},
+    {"q": "ما هي عاصمة اليمن؟", "a": "صنعاء"},
+    {"q": "ما هي العملة الرقمية الأولى في العالم؟", "a": "بيتكوين"},
+    {"q": "من هو صاحب لقب 'عميد الأدب العربي'؟", "a": "طه حسين"},
+    {"q": "ما هو أكبر كوكب في المجموعة الشمسية؟", "a": "المشتري"}
+]
 
-# --- [ نظام الذاكرة السحابية - Supabase ] ---
-def get_cached_hint(word):
+# ⚖️ ميزان الإجابة (التنقية الذكية)
+def clean_text(text):
+    if not text: return ""
+    text = str(text).lower().strip()
+    repls = {'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ة': 'ه', 'ى': 'ي'}
+    for k, v in repls.items():
+        text = text.replace(k, v)
+    return text.replace(" ", "")
+
+# 🛰️ رادار الرصد العالمي
+@dp.message_handler(lambda m: not m.text.startswith('/'))
+async def answer_monitor(m: types.Message):
     try:
-        res = supabase.table("hints").select("hint").eq("word", word).execute()
-        return res.data[0]['hint'] if res.data else None
-    except: return None
-
-def save_to_cache(word, hint):
-    try:
-        supabase.table("hints").insert({"word": word, "hint": hint}).execute()
+        # فحص حالة المسابقة من سوبابيس
+        res = supabase.table("global_system").select("*").eq("id", 1).single().execute()
+        data = res.data
+        
+        if data and data['is_active']:
+            user_ans = clean_text(m.text)
+            correct_ans = clean_text(data['answer'])
+            
+            if user_ans == correct_ans:
+                # 🏆 إيقاف المسابقة فوراً وتسجيل الفوز
+                supabase.table("global_system").update({
+                    "is_active": False,
+                    "winner_name": m.from_user.full_name,
+                    "winner_id": m.from_user.id
+                }).eq("id", 1).execute()
+                
+                await m.reply(f"🎯 **كفو يا بطل!**\nإجابتك ({m.text}) صحيحة.\nلقد حصلت على **10 نقاط** في نظام الرصد! 🚀")
     except: pass
 
-# --- [ محرك جوروب (Groq) ] ---
-async def get_groq_hint(word):
-    global current_key_index
-    url = "https://api.groq.com/openai/v1/chat/completions"
+# 🚀 أمر تشغيل المسابقة (اختيار عشوائي)
+@dp.message_handler(commands=['quiz'])
+async def start_quiz(m: types.Message):
+    # اختيار سؤال عشوائي من الخمسة
+    item = random.choice(QUESTIONS_BANK)
     
-    for _ in range(len(GROQ_KEYS)):
-        active_key = GROQ_KEYS[current_key_index]
-        headers = {"Authorization": f"Bearer {active_key}"}
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": f"أعطني لغزاً قصيراً وذكياً عن كلمة ({word}) بدون ذكرها."}]
-        }
-        try:
-            async with httpx.AsyncClient() as client:
-                res = await client.post(url, json=payload, headers=headers, timeout=12.0)
-                if res.status_code == 200:
-                    hint_text = res.json()['choices'][0]['message']['content'].strip()
-                    return hint_text, f"القلب {current_key_index+1}"
-                
-                # تدوير المفتاح في حال الخطأ (مثل 429)
-                current_key_index = (current_key_index + 1) % len(GROQ_KEYS)
-        except:
-            current_key_index = (current_key_index + 1) % len(GROQ_KEYS)
-    return None, None
+    # تحديث سوبابيس (تفعيل الرادار)
+    supabase.table("global_system").update({
+        "is_active": True,
+        "question": item['q'],
+        "answer": item['a'],
+        "start_time": "now()"
+    }).eq("id", 1).execute()
+    
+    await m.answer(f"🔥 **تحدي جديد انطلق!**\n\nالسؤال: **{item['q']}**\n\n⏳ لديك **20 ثانية** للإجابة!")
 
-# --- [ المعالج الأساسي ] ---
-@dp.message_handler()
-async def main_logic(m: types.Message):
-    word = m.text.strip()
-    
-    # 1. البحث في السحاب أولاً لتوفير المفاتيح
-    cached = get_cached_hint(word)
-    if cached:
-        return await m.answer(f"☁️ <b>تلميح مخزن:</b>\n\n{cached}")
+    # محاكي وقت الانتظار
+    for _ in range(4): # 4 دورات كل دورة 5 ثواني = 20 ثانية
+        await asyncio.sleep(5)
+        chk = supabase.table("global_system").select("is_active").eq("id", 1).single().execute()
+        if not chk.data['is_active']: return
 
-    wait_msg = await m.answer("⏳ <i>جاري استحضار اللغز...</i>")
-    
-    # 2. طلب لغز جديد من جوروب
-    hint, source = await get_groq_hint(word)
-    
-    if hint:
-        save_to_cache(word, hint) # حفظه فوراً
-        res = f"🌟 <b>تلميح ذكي ({source}):</b>\n\n{hint}"
-    else:
-        res = f"📝 <b>تلميح عادي:</b>\nهذا الشيء يتعلق بـ ({word})، حاول تخمينه!"
-
-    await wait_msg.delete()
-    await m.answer(res)
+    # إذا انتهى الوقت
+    supabase.table("global_system").update({"is_active": False}).eq("id", 1).execute()
+    await m.answer(f"⌛ **انتهى الوقت!**\nلم يجاوب أحد.. الإجابة كانت: **{item['a']}**")
 
 if __name__ == '__main__':
-    print("✅ تم إزالة Gemini.. البوت يعمل الآن بنظام Groq الصافي.")
+    print("🚀 المختبر الخماسي يعمل الآن.. أرسل /quiz")
     executor.start_polling(dp, skip_updates=True)
